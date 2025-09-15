@@ -1,0 +1,44 @@
+---
+title: "Dillon Steiger Assignment 1"
+output:
+  word_document: default
+  html_document: default
+  pdf_document: default
+date: "2025-09-04"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+rm(list=ls())
+url<- "https://raw.githubusercontent.com/mwaskom/seaborn-data/master/titanic.csv"
+#titanic passenger data
+
+titanic<-read.csv(url) #saving data into df called "titanic"
+head(titanic)
+
+#3.
+#quantitative vars
+summary(titanic$age)
+summary(titanic$fare)
+
+#categorical vars
+table(titanic$sex)
+table(titanic$class)
+table(titanic$survived)
+
+#4.
+titanic$is_child<- ifelse(titanic$age < 18, 1, 0)
+#creates new var if the passenger is a child (if they are <18 yrs old)
+table(titanic$is_child)
+
+#5.
+#histogram of fare
+hist(titanic$fare, main="Distribution of Passenger Fares", xlab="Fare", col="blue")
+
+#scatterplot of age vs fare
+plot(titanic$age, titanic$fare, main="Scatterplot of Age vs Fare", xlab="Age", ylab="Fare", col="blue", pch=19)
+
+```
