@@ -1,0 +1,173 @@
+---
+title: "DillonSteiger_Assignment2"
+author: "Dillon Steiger"
+date: "2025-09-23"
+output:
+  word_document: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+
+```{r}
+library(tidyverse)
+library(caret)
+library(class)
+library(fastDummies)
+
+set.seed(42)
+
+bank<- read.csv("C:/Users/steig/Downloads/UniversalBank.csv")
+
+#drop ID, ZIP Code
+bank2<- bank %>% select(-ID, -ZIP.Code)
+
+#target var
+y_full<- factor(bank2$Personal.Loan, levels = c(0,1))
+
+#make dummy cols for education (3 levels: 1,2,3)
+bank2<- fastDummies::dummy_cols(bank2, select_columns = "Education", 
+                                remove_selected_columns = TRUE)
+
+#remove Personal.Loan from predictors
+X_full<- bank2 %>% select(-Personal.Loan)
+
+num_cols<- sapply(X_full, is.numeric)
+
+stopifnot(nrow(X_full) == length(y_full)) #quick check
+
+#60% train, 40% validation
+idx_60<- caret::createDataPartition(y_full, p = 0.60, list = FALSE)
+
+X_train_60<- X_full[idx_60, , drop = FALSE]
+y_train_60<- y_full[idx_60]
+X_val_40<- X_full[-idx_60, , drop = FALSE]
+y_val_40<- y_full[-idx_60]
+
+train_center_60<- sapply(X_train_60[, num_cols, drop = FALSE], mean)
+train_scale_60<- sapply(X_train_60[, num_cols, drop = FALSE], sd)
+train_scale_60[train_scale_60 == 0]<- 1 #to guard against zero variance
+
+Xtr_60<- X_train_60
+Xva_40<- X_val_40
+Xtr_60[, num_cols]<- scale(X_train_60[, num_cols, drop = FALSE],
+                           center = train_center_60, scale = train_scale_60)
+Xva_40[, num_cols]<- scale(X_val_40[, num_cols, drop = FALSE], 
+                           center = train_center_60, scale = train_scale_60)
+
+
+#Q1
+#customer features (Education_2 = 1 so Education_1 = 0, Education_3 = 0)
+cust<- tibble(Age = 40, Experience = 10, Income = 84, Family = 2, CCAvg = 2, 
+              Mortgage = 0, Securities.Account = 0, CD.Account = 0, Online = 1,
+              CreditCard = 1, Education_1 = 0, Education_2 = 1, Education_3 = 0
+              ) %>% select(colnames(X_full))
+
+#scaling cust w/ training stats
+cust_scaled<- cust 
+cust_scaled[, num_cols]<- scale(cust[, num_cols, drop = FALSE], 
+                                center = train_center_60, scale = train_scale_60)
+
+#k = 1 prediction
+pred_k1<- class::knn(train = Xtr_60, test = cust_scaled, cl = y_train_60, k = 1)
+cat("Q1 - Prediction with k = 1 (1 = accept loan):", as.character(pred_k1), "\n\n")
+
+
+#Q2
+ks<- 1:50
+val_acc<- numeric(length(ks))
+
+for (i in seq_along(ks)) {
+  pred_val_i<- class::knn(train = Xtr_60, test = Xva_40, cl = y_train_60, k = ks[i])
+  val_acc[i]<- mean(pred_val_i == y_val_40)}
+
+acc_tbl<- tibble(k = ks, val_accuracy = val_acc) %>% arrange(desc(val_accuracy))
+print(head(acc_tbl, 10))
+best_k<- acc_tbl$k[1]
+cat("Q2 - Best k by validation accuracy:", best_k, "\n\n")
+
+
+#Q3
+pred_val_best<- class::knn(train = Xtr_60, test = Xva_40, cl = y_train_60, k = best_k)
+caret::confusionMatrix(pred_val_best, y_val_40, positive = "1")
+cat("Q3 - validation Confusion Matrix (k = ", best_k, ")\n")
+
+
+#Q4
+pred_best_cust<- class::knn(train = Xtr_60, test = cust_scaled, cl = y_train_60, k = best_k)
+cat("\nQ4 - Customer prediction with best (k =", best_k, ")\n")
+
+
+```
+
+```{r}
+#Q5
+#50% training
+idx_50<- caret::createDataPartition(y_full, p = 0.50, list = FALSE)
+X_tr_50<- X_full[idx_50, , drop = FALSE]
+y_tr_50<- y_full[idx_50]
+X_rest<- X_full[-idx_50, , drop = FALSE]
+y_rest<- y_full[-idx_50]
+
+#from remaining 50%: 60% -> validation (30% overall), 40% -> test (20% overall)
+idx_val_from_rest<- caret::createDataPartition(y_rest, p = 0.60, list = FALSE)
+X_va_30<- X_rest[idx_val_from_rest, , drop = FALSE]
+y_va_30<- y_rest[idx_val_from_rest]
+X_te_20<- X_rest[-idx_val_from_rest, , drop = FALSE]
+y_te_20<- y_rest[-idx_val_from_rest]
+
+#scaling w/ only 50% training stats
+train_center_50<- sapply(X_tr_50[, num_cols, drop = FALSE], mean)
+train_scale_50<- sapply(X_tr_50[, num_cols, drop = FALSE], sd)
+train_scale_50[train_scale_50 == 0]<- 1
+
+Xtr_50<- X_tr_50
+Xva_30_scaled<- X_va_30
+Xte_20_scaled<- X_te_20
+
+Xtr_50[, num_cols]<- scale(X_tr_50[, num_cols, drop = FALSE],
+                           center = train_center_50, scale = train_scale_50)
+Xva_30_scaled[, num_cols]<- scale(X_va_30[, num_cols, drop = FALSE], 
+                                  center = train_center_50, scale = train_scale_50)
+Xte_20_scaled[, num_cols]<- scale(X_te_20[, num_cols]<- X_te_20[, num_cols, drop = FALSE], 
+                                  center = train_center_50, scale = train_scale_50)
+
+#eval with best_k
+pred_tr_50<- class::knn(train = Xtr_50, test = Xtr_50, cl = y_tr_50, k = best_k)
+pred_va_30<- class::knn(train = Xtr_50, test = Xva_30_scaled, cl = y_tr_50, k = best_k)
+pred_te_20<- class::knn(train = Xtr_50, test = Xte_20_scaled, cl = y_tr_50, k = best_k)
+
+cm_tr_50<- caret::confusionMatrix(pred_tr_50, y_tr_50, positive = "1")
+cm_va_30<- caret::confusionMatrix(pred_va_30, y_va_30, positive = "1")
+cm_te_20<- caret::confusionMatrix(pred_te_20, y_te_20, positive = "1")
+
+cat("Q5 - Train (50%) Confusion Matrix (k =", best_k, ")\n"); print(cm_tr_50)
+cat("\nQ5 - Validation (30%) Confusion Matrix (k =", best_k, ")\n"); print(cm_va_30)
+cat("\nQ5 - Test (20%) Confusion Matrix (k = ", best_k, ")\n"); print(cm_te_20)
+
+# Comparison of Confusion Matrices
+#Training set 50%: accuracy is highest of the three sets, specificity is almost perfect, sensitivity is reasonably good but lower than specificity. This makes sense since k-NN tends to memorize local structure on the training data so predictions are strongest here.
+
+#Validation set 30%: accuracy drops slightly compared to training, specificity remains very high (few false positives), sensitivity decreases further which means more of the "loan acceptors" are missed. This is expected since moving from training to hold out data exposes the model to new patterns thereby reducing recall.
+
+#Test set 20%: accuracy is similar to validation, specificity is strong, sensitivity is slightly less than validation but still noticeably lower than training. This confirms the model generalization well as validation and test results are consistent with no major over-fitting.
+
+#Training vs Validation/Test
+#Training shows the best performance because k-NN is essentially "memorizing" the training points. The neighbors include the training points themselves. Validation and test accuracies are slightly lower which is normal and indicates some generalization error.
+
+#High specificity vs lower sensitivity
+#All splits show very high specificity but more modest sensitivity. This imbalance is due to the dataset's class distribution in which only 9.6% of customers accepted a loan in the campaign. k-NN tends to favor the majority class (0 = no loan) when classes are imbalanced.
+
+#Consistency between validation and test
+#Validation and test results are very close which means the choice of k = 3 gives stable, generalizable performance. k = 3 balances over-fitting and under-fitting, maintains high accuracy across training, validation, and test sets, and produces consistent confusion matrices. It uses enough neighbors to smooth out noise without losing important predictor information.  
+
+```
+
