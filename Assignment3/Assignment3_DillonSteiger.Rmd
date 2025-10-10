@@ -1,0 +1,134 @@
+---
+title: "Assignment 3"
+author: "Dillon Steiger"
+date: "2025-10-10"
+output:
+  word_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+
+```{r}
+library(dplyr)
+library(tidyr)
+library(caret)
+library(e1071)
+
+ub_raw<- read.csv("C:/Users/steig/Downloads/UniversalBank.csv")
+
+names(ub_raw)
+
+ub<- ub_raw %>% transmute(
+  Loan = Personal.Loan,
+  CC = CreditCard,
+  Online = Online
+)
+
+#train/validation split 60/40
+set.seed(123)
+in_train<- createDataPartition(ub$Loan, p = 0.60, list = FALSE)
+train<- ub[in_train, ]
+valid<- ub[-in_train, ]
+
+cat("Train dims:", paste(dim(train), collapse = " x "), "\n")
+cat("Valid dims:", paste(dim(valid), collapse = " x "), "\n")
+cat("Training class proportions (Loan):\n")
+print(prop.table(table(train$Loan)))
+
+#Part A
+#pivot table: Online (cols) x CC (rows)
+train_fac<- train %>% mutate(across(c(Loan, CC, Online), ~ factor(.x, levels = c(0,1))))
+
+tab_A<- xtabs(~ CC + Loan + Online, data = train_fac)
+cat("\n(A) 3-way table: CC x Loan X Online (counts)\n")
+print(tab_A)
+
+cat("\n(A) Pretty pivot (rows: CC,Loan; cols: Online)\n")
+pretty_A<- as.data.frame(tab_A) %>% arrange(CC, Loan, Online) %>%
+  pivot_wider(names_from = Online, values_from = Freq, names_prefix = "Online_") %>%
+  arrange(CC, Loan)
+print(pretty_A)
+
+#Part B
+#P(Loan+1 | CC=1, Online=1)
+num_B<- tab_A["1", "1", "1"]
+den_B<- tab_A["1", "0", "1"] + tab_A["1", "1", "1"]
+piv_prob<- as.numeric(num_B / den_B)
+cat("\n(B) P(Loan=1 | CC=1, Online=1) from pivot =", piv_prob, "\n")
+
+#Part C
+#Tables (Loan x Online), (Loan x CC)
+tab_L_online<- table(Loan = train$Loan, Online = train$Online)
+tab_L_cc<- table(Loan = train$Loan, CC = train$CC)
+
+cat("\n(C) Loan x Online (counts)\n")
+print(tab_L_online)
+cat("\n(C) Loan x CC (counts)\n")
+print(tab_L_cc)
+
+#Part D
+#P(CC=1 | Loan=1)
+p_i<- tab_L_cc["1", "1"] / sum(tab_L_cc["1", ])
+
+#P(Online=1 | Loan=1)
+p_ii<- tab_L_online["1", "1"] / sum(tab_L_online["1", ])
+
+#P(Loan=1)
+p_iii<- mean(train$Loan == 1)
+
+#P(CC=1 | Loan=0)
+p_iv<- tab_L_cc["0", "1"] / sum(tab_L_cc["0", ])
+
+#P(Online=1 | Loan=0)
+p_v<- tab_L_online["0", "1"] / sum(tab_L_online["0", ])
+
+#P(Loan=0)
+p_vi<- 1 - p_iii
+
+cat("\n(D) Requested Probabilities:\n")
+print(c(`i = P(CC=1 | Loan=1)` = p_i,
+        `ii = P(Online=1 | Loan=1)` = p_ii,
+        `iii = P(Loan=1)` = p_iii,
+        `iv = P(CC=1 | Loan=0)` = p_iv,
+        `v = P(Online=1 | Loan=0)` = p_v,
+        `vi = P(Loan=0)` = p_vi))
+
+#Part E
+num1<- p_i * p_ii * p_iii
+num0<- p_iv * p_v * p_vi
+nb_prob_from_counts<- as.numeric(num1 / (num1 + num0))
+cat("\n(E) Naive Bayes P(Loan=1 | CC=1, Online=1) =", nb_prob_from_counts, "\n")
+
+#Part F
+cat("\n(F) Comparison:\n")
+comparison<- data.frame(
+  Method = c("Direct from pivot (B)", "Naive Bayes from (D) + (E)"),
+  Probability = c(piv_prob, nb_prob_from_counts)
+)
+print(comparison, row.names = FALSE)
+
+#Part G
+cat("\n(G) Needed entries for Naive Bayes calculation:\n")
+cat("- From Loan x CC: P(CC=1 | Loan=1) and P(CC=1 | Loan=0)\n")
+cat("- From Loan x Online: P(Online=1 | Loan=1) and P(Online=1 | Loan=0)\n")
+cat("- Class priors: P(Loan=1) and P(Loan=0)\n")
+
+train_fac_for_nb<- train_fac #already factors w/ levels c(0,1)
+nb_fit<- naiveBayes(Loan ~ CC + Online, data = train_fac_for_nb, laplace = 0)
+newx<- data.frame(CC = factor(1, levels = c(0,1)),
+                  Online = factor(1, levels = c(0,1)))
+post<- predict(nb_fit, newdata = newx, type = "raw")
+cat("\nModel posterior P(Loan=1 | CC=1, Online=1) from e1071::naiveBayes =", post[, "1"], "\n")
+
+```
+
+
