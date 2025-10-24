@@ -1,0 +1,129 @@
+---
+title: "Assignment 4"
+author: "Dillon Steiger"
+date: "2025-10-20"
+output:
+  word_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+
+```{r}
+library(tidyverse)
+library(cluster)
+library(factoextra)
+library(dplyr)
+
+pharma<- read.csv("C:/Users/steig/Downloads/Pharmaceuticals.csv")
+
+#Selecting only numeric vars
+pharma_num<- pharma[, 3:11]
+
+#Missing and infinite values
+for (i in 1:ncol(pharma_num)) {
+  this_col<- pharma_num[[i]]
+  this_col[!is.finite(this_col)]<- NA
+  this_col[is.na(this_col)]<- mean(this_col, na.rm = TRUE)
+  pharma_num[[i]]<- this_col
+}
+
+#Standardizing data
+pharma_scaled<- scale(pharma_num)
+pharma_scaled[!is.finite(pharma_scaled)]<- 0 #safety for NaN/Inf
+
+#Verifying data
+cat("Rows:", nrow(pharma_scaled), "Cols:", ncol(pharma_scaled), "\n")
+cat("Any NA:", sum(is.na(pharma_scaled)), "\n")
+
+#Determining optimal k
+set.seed(123)
+fviz_nbclust(pharma_scaled, kmeans, method = "wss") + 
+  labs(title = "Elbow Method for Optimal k")
+
+fviz_nbclust(pharma_scaled, kmeans, method = "silhouette") + 
+  labs(title = "Silhouette Method for Optimal k")
+#optimal k is k=3
+
+#Run k-means
+set.seed(123)
+k3<- kmeans(pharma_scaled, centers = 3, nstart = 25)
+
+#Adding cluster assignment to orig data
+pharma$Cluster<- as.factor(k3$cluster)
+
+#Visualize clusters
+fviz_cluster(k3, data = pharma_scaled, geom = "point", ellipse.type = "norm",
+             ggtheme = theme_minimal()) + 
+  labs(title = "k-means Clustering of Pharmaceutical Firms")
+
+#Summarizing cluster characteristics
+cluster_summary<- pharma %>% group_by(Cluster) %>% 
+  summarize(across(3:11, mean, .names = "mean_{col}"))
+
+print(cluster_summary)
+
+#Examining non-numeric vars
+cat("\nCluster vs Median Recommendation:\n")
+print(table(pharma$Cluster, pharma$Median_Recommendation))
+
+cat("\nCluster vs Headquarters Location:\n")
+print(table(pharma$Cluster, pharma$Location))
+
+cat("\nCluster vs Stock Exchange:\n")
+print(table(pharma$Cluster, pharma$Exchange))
+
+#Assigning cluster names
+pharma<- pharma %>% mutate(Cluster_Name = case_when(
+  Cluster == 1 ~ "High Growth / High Profitability",
+  Cluster == 2 ~ "Moderate Growth /  Stable Returns",
+  Cluster == 3 ~ "Low Growth / High Leverage",
+  TRUE ~ "Uncategorized"
+))
+
+write.csv(pharma, "Pharma_Clusters_Output.csv", row.names = FALSE)
+
+print("Clustered dataset with interpreted labels successfully created.")
+head(pharma)
+
+#a)
+#Since the variables are measured on different scales I standardized them using z-scores so they would have equal weights. Both the Elbow and Silhouette method suggested that the optimal k should be k=3.
+
+#b)
+#Cluster 1: high growth / high profitability
+#Firms in this cluster have high market cap, strong ROE and ROA, and high profit margins. These are large established industry leaders.
+
+#Cluster 2: moderate growth / stable returns
+#Firms in this cluster have avg profitability and size, moderate leverage, and steady rev growth. These are mid-size firms that maintain good overall operations and predictable earnings.
+
+#Cluster 3: low growth  / high leverage
+#Firms in this cluster have low profitability but higher leverage and weaker growth. These are small or financially constrained firms that are either focusing on a niche product or are in early growth stages.
+
+#c)
+#Median recommendation:
+#Firms in the "high growth /  high profitability" cluster were most frequently rated as strong or moderate buy by analysts. While "low growth / high leverage" cluster had more hold or moderate sell recommendations.
+
+#Headquarters location:
+#Profitable large firms tend to be headquartered in the US or the UK. While smaller or lower performing firms were dispersed internationally (Canada, Germany, Ireland, etc).
+
+#Stock exchange:
+#Most firms in cluster 1 and 2 were listed on the NYSE. While a few in cluster 3 were on NASDAQ which suggest a possible split between more mature vs smaller growth oriented listings.
+
+#d)
+#Based on the financial and categorical characteristics the clusters can be described as:
+#Cluster 1: "high growth / high profitability" 
+#Large profitable, efficient, and well-rated firms.
+#Cluster 2: "moderate growth / stable returns"
+#Mid-sized firms with consistent but moderate performance and stable profitability.
+#Cluster 3: "low growth / high leverage"
+#Smaller or riskier firms with weaker profitability and higher debt ratios.
+```
+
